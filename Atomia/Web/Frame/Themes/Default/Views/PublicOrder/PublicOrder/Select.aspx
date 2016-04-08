@@ -10,12 +10,14 @@
 <%@ Import Namespace="System.Text" %>
 <%@ Import Namespace="Atomia.Billing.Core.Common.PaymentPlugins" %>
 <%@ Import Namespace="Atomia.Web.Plugin.Validation.HtmlHelpers" %>
+<%@ Import Namespace="Atomia.Web.Plugin.Validation.Models" %>
 
 <asp:Content ID="indexTitle" ContentPlaceHolderID="TitleContent" runat="server">
   <%= Html.Resource("PageTitle")%>
 </asp:Content>
 <asp:Content ID="indexContent" ContentPlaceHolderID="MainContent" runat="server">
     <% var area = Url.RequestContext.RouteData.DataTokens["area"].ToString();%>
+    <% bool separateUsernameAndEmail = (bool)ViewData["SeparateUsernameAndEmail"]; %>
     <script type="text/javascript">
         $(document).ready(function() {
             $("#submit_form").validate();
@@ -41,10 +43,12 @@
             </p>
 
             <% Html.EnableClientValidation(); %>
+
             <% Html.AddCustomerValidationRules(new CustomerValidationOptions {
                 ProductsChangedEvent = "AtomiaOrderForm.productsChangedEvent",
                 ArticleNumberList = "AtomiaOrderForm.getSelectedArticleNumbers()",
-                ProductCategoryList = "AtomiaOrderForm.getSelectedProductCategories()"
+                ProductCategoryList = "AtomiaOrderForm.getSelectedProductCategories()",
+                RefreshCustomFieldsFunction = "RefreshCustomFields()"
             }); %>
 
             <% Html.BeginForm("Select", "PublicOrder", new { area }, FormMethod.Post, new { @id = "submit_form", autocomplete = "off" }); %>
@@ -399,6 +403,25 @@
                             <%= Html.ValidationMessage("Email")%>
                         </div>
                         <br class="clear" />
+                    </div>
+
+                    <div class="formrow username" style="display:none">
+                        <h5>
+                            <label class="required" for="Username"><span>*</span><%= Html.Resource("Username") %>:</label>
+                        </h5>
+                        <div class="col2row">
+                            <%= Html.TextBox("Username") %>
+                            <p id="infotipUsername" class="infotip" style="display: none;">
+                                <%= Html.Resource("UsernameInfo")%>
+                            </p>
+                            <%= Html.ValidationMessage("Username") %>
+                        </div>
+                        <br class="clear" />
+                    </div>
+
+                    <div id="CustomFieldsDiv">
+                        <% List<CustomField> customFields = Model.CustomFields != null ? Model.CustomFields.Select(c => new CustomField{Name = c.Key, Value = c.Value}).ToList() : new List<CustomField>(); %>
+                        <% Html.RenderPartial("CustomFields", customFields); %>
                     </div>
                 </div>
                 
@@ -1003,7 +1026,29 @@
         <%= Html.Hidden("dontShowTaxesForThisResellerHidden", Session["dontShowTaxesForThisResellerHidden"])%>
     </div>
     <script type="text/javascript">
-        AtomiaValidation.init("AtomiaUsername");
+        var paymentMethodSelector = 'input[name=RadioPaymentMethod]:checked';
+
+        function RefreshCustomFields() {
+            var selectedArticleNumbers = new Array();                
+            for (var i = 0; i < cartArray.length; i++) {
+                selectedArticleNumbers.push(cartArray[i].id);
+            }
+
+            var data = { 
+                country: $("#CountryCode").val(), 
+                products: selectedArticleNumbers, 
+                resellerId: "<%=ViewData["ResellerId"] %>",
+                keepExistingFields: false };                
+            var customFields = $("input[name^='CustomFields']");
+            for (var i = 0; i < customFields.length; i += 2) {
+                data['existingFields[' + i / 2 + '].Key'] = customFields[i].value;
+                data['existingFields[' + i / 2 + '].Value'] = customFields[i + 1].value;
+            }
+
+            $("#CustomFieldsDiv").load("/Validation/GetCustomFields", data);
+        }
+
+        AtomiaValidation.init("AtomiaUsername", "AtomiaUsernameRequired");
         var formValidator = null;
         var initializeParams = {};
         initializeParams.ResourcePersonalNumber = <%= Html.ResourceJavascript("PersonalNumber") %>;
@@ -1018,12 +1063,13 @@
 
         var OrderByPostSelected = false;
         var canSubmit = true;
-        var decimalDigits = 2;
+        var decimalDigits = parseInt('<%= ViewData["CurrencyDecimalPlaces"] %>');
 
         var decimalParserParams = {};
         decimalParserParams.DecimalSeparator = '<%= ViewData["decimalSeparator"] %>';
         decimalParserParams.GroupSeparator = '<%= ViewData["groupSeparator"] %>';
         decimalParserParams.Locale = 'se';
+        decimalParserParams.CurrencyDecimalPlacesFormat = '<%= ViewData["CurrencyDecimalPlacesFormat"] %>';
         initializeDecimalParser(decimalParserParams);
 
         var emptyFieldMessage = <%= Html.ResourceJavascript("ValidationErrors, ErrorEmptyField") %>;
@@ -1130,8 +1176,13 @@
             submitParams.DefaultCountryCode = '<%= (string)ViewData["defaultCountry"]%>';
 
             initializeButtons(submitParams);
+            initializeEmailChange();
 
             addTermValidation('<%= Html.ResourceJavascript("ValidationErrors, ErrorTermNotChecked") %>');
+
+            if ('<%= separateUsernameAndEmail %>' === 'True') {
+                $('.username').show();
+            }
         });
     </script>
 </asp:Content>

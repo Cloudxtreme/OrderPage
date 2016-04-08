@@ -324,6 +324,9 @@ namespace Atomia.Web.Plugin.PublicOrder.Models
         /// <value><c>true</c> if [whois contact]; otherwise, <c>false</c>.</value>
         public bool WhoisContact { get; set; }
 
+        [CustomFieldsValidation("CustomFields", "CustomerValidation,CustomFields", CountryField = "CountryCode", ProductField = "CurrentCart.productID", ResellerIdField = "ResellerId")]
+        public IDictionary<string, string> CustomFields { get; set; }
+
         /// <summary>
         /// Gets or sets the city.
         /// </summary>
@@ -422,6 +425,14 @@ namespace Atomia.Web.Plugin.PublicOrder.Models
         [AtomiaRequired("ValidationErrors, ErrorEmptyField")]
         [CustomerValidation(CustomerValidationType.Zip, "CustomerValidation,Zip", CountryField = "DomainRegCountryCode", ApplyReplace = true)]
         public string DomainRegPostNumber { get; set; }
+
+        /// <summary>
+        /// Gets or sets the username.
+        /// </summary>
+        /// <value>The username.</value>
+        [AtomiaUsernameRequired("ValidationErrors, ErrorEmptyField")]
+        [AtomiaUsername("BillingResources,ErrorUsernameNotAvailable", AtomiaUsernameAttributeType.Username)]
+        public string Username { get; set; }
 
         /// <summary>
         /// Gets or sets the reseller identifier.

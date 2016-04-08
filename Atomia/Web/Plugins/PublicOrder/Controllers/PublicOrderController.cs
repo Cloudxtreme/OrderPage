@@ -439,6 +439,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
             ViewData["defaultCountry"] = countryCode;
             string currencyCode = ResellerHelper.GetResellerCurrencyCode();
             var resellerId = ResellerHelper.GetResellerId();
+            ViewData["ResellerId"] = resellerId;
 
             // Show or hide Personal number field
             bool showPersonalNumber = true;
@@ -460,6 +461,14 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
 
             ViewData["decimalSeparator"] = locale.NumberFormat.NumberDecimalSeparator;
             ViewData["groupSeparator"] = locale.NumberFormat.NumberGroupSeparator;
+
+            // Get currency decimal places from session
+            int currencyDecimalPlaces = Session["CurrencyDecimalPlaces"] != null
+                ? (int)Session["CurrencyDecimalPlaces"]
+                : 2;
+
+            ViewData["CurrencyDecimalPlaces"] = currencyDecimalPlaces;
+            ViewData["CurrencyDecimalPlacesFormat"] = string.Format("#,###.{0}", new string('0', currencyDecimalPlaces));
 
             List<Country> countryList = new List<Country>();
 
@@ -619,6 +628,8 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                 submitForm = (SubmitForm)Session["SavedSubmitForm"];
             }
 
+            ViewData["SeparateUsernameAndEmail"] = Atomia.Common.Configuration.AtomiaCommon.Instance.SeparateUsernameAndEmail;
+
             return View(submitForm);
         }
 
@@ -633,6 +644,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
         [PluginStuffLoader(PartialItems = true, PluginCssJsFiles = true)]
         public ActionResult Select(SubmitForm SubmitForm)
         {
+            bool useSeparateUsernameAndEmail = Atomia.Common.Configuration.AtomiaCommon.Instance.SeparateUsernameAndEmail;
             List<Country> countryList = new List<Country>();
 
             bool paymentMethodCc = false; // finish payment method CC
@@ -670,6 +682,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
             List<ProductDescription> currentCart;
 
             var resellerId = ResellerHelper.GetResellerId();
+            ViewData["ResellerId"] = resellerId;
             var currencyCode = ResellerHelper.GetResellerCurrencyCode();
             var countryCode = ResellerHelper.GetResellerCountryCode();
 
@@ -783,6 +796,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                     List<PublicOrderItem> myOrderItems = new List<PublicOrderItem>();
 
                     string jsonDomainRegContact = string.Empty;
+                    JavaScriptSerializer javaScriptSerializer = new JavaScriptSerializer();
                     if (SubmitForm.WhoisContact)
                     {
                         SubmitForm.DomainRegCity = GeneralHelper.PrepareForSubmit(SubmitForm.DomainRegCity);
@@ -798,7 +812,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                         SubmitForm.DomainRegVATNumber = GeneralHelper.PrepareForSubmit(SubmitForm.DomainRegVATNumber);
                         SubmitForm.DomainRegTelephone = FormattingHelper.FormatPhoneNumber(SubmitForm.DomainRegTelephone, SubmitForm.DomainRegCountryCode);
                         SubmitForm.DomainRegPostNumber = GeneralHelper.PrepareForSubmit(SubmitForm.DomainRegPostNumber);
-                        jsonDomainRegContact = new JavaScriptSerializer().Serialize(new DomainRegContact()
+                        jsonDomainRegContact = javaScriptSerializer.Serialize(new DomainRegContact
                             {
                                 City = SubmitForm.DomainRegCity,
                                 Country = SubmitForm.DomainRegCountryCode,
@@ -811,7 +825,8 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                                 Street2 = SubmitForm.DomainRegAddress2,
                                 VatNo = SubmitForm.DomainRegVATNumber,
                                 Voice = SubmitForm.DomainRegTelephone,
-                                Zip = SubmitForm.DomainRegPostNumber.Trim()
+                                Zip = SubmitForm.DomainRegPostNumber.Trim(),
+                                CustomFields = javaScriptSerializer.Serialize(SubmitForm.CustomFields)
                             });
                     }
 
@@ -1001,7 +1016,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
 
                     PublicOrderConfigurationSection opcss = Helpers.LocalConfigurationHelper.GetLocalConfigurationSection();
                     Dictionary<string, string> emailProps = new Dictionary<string, string>();
-                    JavaScriptSerializer jsemail = new JavaScriptSerializer();
+                    JavaScriptSerializer jsemail = javaScriptSerializer;
                     bool addApplication = false;
 
                     foreach (PublicOrderItem myOrderItem in myOrderItems)
@@ -1089,6 +1104,12 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                         orderCustomData.Add(new PublicOrderCustomData { Name = "PayByInvoice", Value = "true" });
                     }
 
+                    string paymentMethod = SubmitForm.RadioPaymentMethod;
+                    if (paymentMethod == "InvoiceByEmail" || paymentMethod == "InvoiceByPost") {
+                        paymentMethod = "PayWithInvoice";
+                    }
+                    orderCustomData.Add(new PublicOrderCustomData { Name = "PaymentMethod", Value = paymentMethod });
+
                     if (!string.IsNullOrEmpty((string)Session["SpecialPID"]))
                     {
                         orderCustomData.Add(new PublicOrderCustomData { Name = "SpecialPID", Value = (string)Session["SpecialPID"] });
@@ -1109,12 +1130,22 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                         orderCustomData.Add(new PublicOrderCustomData { Name = "TechContact", Value = SubmitForm.RadioTechContact });
                     }
 
+                    if (SubmitForm.CustomFields != null && SubmitForm.CustomFields.Keys.Count > 0)
+                    {
+                        orderCustomData.Add(
+                            new PublicOrderCustomData
+                                {
+                                    Name = "DomainContactCustomFields",
+                                    Value = javaScriptSerializer.Serialize(SubmitForm.CustomFields)
+                                });
+                    }
+
                     // Add CustommData posted with submit, client added
                     if (!string.IsNullOrEmpty(SubmitForm.OrderCustomData))
                     {
                         try
                         {
-                            JavaScriptSerializer js = new JavaScriptSerializer();
+                            JavaScriptSerializer js = javaScriptSerializer;
                             orderCustomData.AddRange(js.Deserialize<PublicOrderCustomData[]>(SubmitForm.OrderCustomData));
                         }
                         catch (Exception ex)
@@ -1153,6 +1184,11 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                     if (IndexHelper.IsImmediateLoginEnabled(this))
                     {
                         orderCustomData.Add(new PublicOrderCustomData { Name = "ShowHcpLandingPage", Value = "true" });
+                    }
+
+                    if (useSeparateUsernameAndEmail)
+                    {
+                        orderCustomData.Add(new PublicOrderCustomData { Name = "Username", Value = SubmitForm.Username });
                     }
 
                     myOrder.CustomData = orderCustomData.ToArray();
@@ -1352,6 +1388,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
             ViewData["ShowPersonalNumber"] = showPersonalNumber;
 
             ViewData["ItemCategories"] = CustomerValidationHelper.GetItemCategories(resellerId);
+            ViewData["SeparateUsernameAndEmail"] = useSeparateUsernameAndEmail;
 
             return View(SubmitForm);
         }
@@ -1392,10 +1429,31 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
             if (this.Session["CreatedOrder"] != null)
             {
                 JavaScriptSerializer js = new JavaScriptSerializer();
+                var createdOrder = this.Session["CreatedOrder"] as OrderServiceReferences.AtomiaBillingPublicService.PublicOrder;
+                PublicOrderItemProperty domainRegContactAttr = null;
 
-                ViewData["CreatedOrderRaw"] = this.Session["CreatedOrder"];
-                ViewData["CreatedOrderAsJson"] = js.Serialize(this.Session["CreatedOrder"]);
+                if (createdOrder != null)
+                {
+                    foreach (var item in createdOrder.OrderItems)
+                    {
+                        // They are all the same so remove all to avoid JSON errors and use the last one as domainRegContactAttr.
+                        domainRegContactAttr = item.CustomData.FirstOrDefault(cd => cd.Name.ToLower() == "domainregcontact");
 
+                        if (domainRegContactAttr != null)
+                        {
+                            var customData = item.CustomData.ToList();
+                            customData.Remove(domainRegContactAttr);
+                            item.CustomData = customData.ToArray();
+                        }
+                    }
+                }
+
+                ViewData["CreatedOrderAsJson"] = js.Serialize(createdOrder);
+                ViewData["DomainRegContactAsJson"] = domainRegContactAttr != null
+                    ? domainRegContactAttr.Value
+                    : "null";
+                
+                ViewData["CreatedOrderRaw"] = createdOrder;
                 this.Session["CreatedOrder"] = null;
 
                 // Throw away any previous submit form (used to re-fill form on canceled payment)
@@ -1489,6 +1547,21 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
         /// <returns>The Json with true/false if the domainName is succesfully validated.</returns>
         public ActionResult ValidateDomain(string domainName)
         {
+            return ValidateDomain(domainName, false);
+        }
+
+        /// <summary>
+        /// Validates the domain.
+        /// </summary>
+        /// <param name="domainName">Name of the domain.</param>
+        /// <returns>The Json with true/false if the domainName is succesfully validated.</returns>
+        public ActionResult ValidateDomains(string domainName)
+        {
+            return ValidateDomain(domainName, true);
+        }
+
+        private ActionResult ValidateDomain(string domainName, bool allowWithoutTLD)
+        {
             bool validated = true;
 
             string[] domainNames = domainName.Split('\n');
@@ -1505,7 +1578,7 @@ namespace Atomia.Web.Plugin.PublicOrder.Controllers
                     {
                         try
                         {
-                            string finalDomainName = SimpleDnsPlus.IDNLib.Encode(domain);
+                            string finalDomainName = SimpleDnsPlus.IDNLib.Encode(allowWithoutTLD && !domainName.Contains(".") ? (domain + ".random") : domain);
                             validated = Regex.IsMatch(finalDomainName, RegularExpression.GetRegularExpression("EncodedDomain"));
                         }
                         catch (Exception ex)

@@ -23,6 +23,21 @@ function initializeButtons(submitParams) {
     });
 }
 
+var focusedIn = false;
+function initializeEmailChange() {
+    $("#Email").focusin(function () {
+        focusedIn = true;
+    });
+    $("#Email").focusout(function () {
+        focusedIn = false;
+    });
+    $("#Email").change(function () {
+        if (!focusedIn) {
+            //let's call focus out so that validation is initiated, because browser did the autofill (because input value was changed without getting focus first).
+            $("#Email").focusout();
+        }
+    });
+}
 
 window.productsId = {};
 window.productsKey = [];
@@ -276,7 +291,7 @@ var initializeDecimalParser = function(params) {
     };
 
     jQuery.fn.format.defaults = {
-        format: "#,###.00",
+        format: params.CurrencyDecimalPlacesFormat,
         decimalSep: params.DecimalSeparator,
         groupSep: params.GroupSeparator,
         locale: params.Locale,
